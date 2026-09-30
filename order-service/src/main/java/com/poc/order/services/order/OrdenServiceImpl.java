@@ -14,7 +14,6 @@ import com.poc.order.dtoOrden.OrdenResponse;
 import com.poc.order.models.orden.EntidadOrden;
 import com.poc.order.models.orden.EstadoOrden;
 import com.poc.order.repositories.orden.OrdenRepository;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
