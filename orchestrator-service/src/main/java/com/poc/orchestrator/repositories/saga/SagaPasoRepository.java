@@ -8,6 +8,12 @@ package com.poc.orchestrator.repositories.saga;
  *
  * @author eiler
  */
-public class SagaPasoRepository {
-    
+import com.poc.orchestrator.models.saga.EntidadSagaPaso;
+import org.springframework.data.jpa.repository.JpaRepository;
+
+import java.util.List;
+
+public interface SagaPasoRepository extends JpaRepository<EntidadSagaPaso, Long> {
+
+    List<EntidadSagaPaso> findBySagaIdOrderByIdAsc(String sagaId);
 }
