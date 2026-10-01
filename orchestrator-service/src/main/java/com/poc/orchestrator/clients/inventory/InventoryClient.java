@@ -10,13 +10,13 @@ package com.poc.orchestrator.clients.inventory;
  */
 import com.poc.orchestrator.config.ServiciosProperties;
 import com.poc.orchestrator.dtoClientes.ReservaClienteResponse;
+import com.poc.orchestrator.exceptions.FalloDeNegocioException;
 import com.poc.orchestrator.exceptions.PasoFallidoException;
 import io.github.resilience4j.circuitbreaker.CallNotPermittedException;
 import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.stereotype.Component;
-import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestClient;
 
 import java.util.Map;
@@ -36,8 +36,9 @@ public class InventoryClient {
     /**
      * CIRCUIT BREAKER 2: protege las llamadas hacia inventory-service.
      *
-     * Nota importante: el 409 (stock insuficiente) es un fallo de NEGOCIO.
-     * No debe contar para abrir el circuito, porque el servicio esta sano.
+     * El 409 (stock insuficiente) se lanza como FalloDeNegocioException,
+     * que esta configurada para ser IGNORADA por el circuito. El servicio
+     * esta sano: simplemente no hay producto.
      */
     @CircuitBreaker(name = "inventory", fallbackMethod = "reservarFallback")
     public ReservaClienteResponse reservar(String sagaId, Long ordenId,
@@ -54,9 +55,9 @@ public class InventoryClient {
                         "cantidad", cantidad))
                 .retrieve()
                 .onStatus(HttpStatusCode::is4xxClientError, (req, res) -> {
-                    // Fallo de negocio: se propaga sin contarse como fallo del circuito
-                    throw new PasoFallidoException("INVENTARIO",
-                            "Stock insuficiente para " + producto, true);
+                    log.warn("Fallo de NEGOCIO en inventory: stock insuficiente para {}", producto);
+                    throw new FalloDeNegocioException(
+                            "Stock insuficiente para " + producto);
                 })
                 .body(ReservaClienteResponse.class);
     }
@@ -64,9 +65,9 @@ public class InventoryClient {
     private ReservaClienteResponse reservarFallback(String sagaId, Long ordenId,
                                                     String producto, Integer cantidad,
                                                     Throwable t) {
-        // Un fallo de negocio no debe tratarse como caida del servicio
-        if (t instanceof PasoFallidoException pfe && pfe.isFalloDeNegocio()) {
-            throw pfe;
+        // Fallo de negocio: el servicio esta sano, la saga debe compensar
+        if (t instanceof FalloDeNegocioException) {
+            throw new PasoFallidoException("INVENTARIO", t.getMessage(), true);
         }
 
         if (t instanceof CallNotPermittedException) {
@@ -75,12 +76,12 @@ public class InventoryClient {
                     "Circuito abierto: inventory-service no esta disponible", false);
         }
 
-        log.error("Fallo al reservar saga={}: {}", sagaId, t.getMessage());
+        log.error("Fallo de INFRAESTRUCTURA al reservar saga={}: {}", sagaId, t.getMessage());
         throw new PasoFallidoException("INVENTARIO",
                 "Error al reservar inventario: " + t.getMessage(), false);
     }
 
-    /** Transaccion compensatoria. */
+    /** Transaccion compensatoria. Sin circuit breaker: debe intentarse siempre. */
     public void liberar(Long reservaId) {
         log.warn("COMPENSANDO: liberando reserva id={}", reservaId);
 
