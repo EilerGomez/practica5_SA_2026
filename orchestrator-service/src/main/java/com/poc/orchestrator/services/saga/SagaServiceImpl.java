@@ -54,13 +54,6 @@ public class SagaServiceImpl implements SagaService {
         this.shippingClient = shippingClient;
     }
 
-    /**
-     * Orquesta la saga de compra en cuatro pasos.
-     * Si cualquiera falla, ejecuta las compensaciones en orden INVERSO.
-     *
-     * No lleva @Transactional: cada paso es una transaccion local en su
-     * propio servicio. Aqui no hay nada que revertir automaticamente.
-     */
     @Override
     public SagaResponse ejecutarCompra(CompraRequest request) {
         String sagaId = "SAGA-" + UUID.randomUUID().toString().substring(0, 8).toUpperCase();
@@ -133,11 +126,6 @@ public class SagaServiceImpl implements SagaService {
         }
     }
 
-    /**
-     * Ejecuta las compensaciones en ORDEN INVERSO al de las transacciones.
-     * Cada compensacion se intenta de forma independiente: si una falla,
-     * las demas siguen ejecutandose.
-     */
     private void compensar(EntidadSaga saga) {
         String sagaId = saga.getSagaId();
         log.warn("===== INICIANDO COMPENSACION DE {} =====", sagaId);
@@ -146,8 +134,6 @@ public class SagaServiceImpl implements SagaService {
         sagaRepository.save(saga);
 
         boolean todoCompensado = true;
-
-        // Orden inverso: ENVIO -> INVENTARIO -> PAGO -> ORDEN
 
         if (saga.getEnvioId() != null) {
             todoCompensado &= compensarPaso(sagaId, "ENVIO", saga.getEnvioId(),
@@ -180,11 +166,6 @@ public class SagaServiceImpl implements SagaService {
         }
     }
 
-    /**
-     * Ejecuta una compensacion individual. Devuelve false si fallo.
-     * Una compensacion fallida es el peor escenario de una saga:
-     * ningun patron lo resuelve solo, requiere intervencion humana.
-     */
     private boolean compensarPaso(String sagaId, String paso, Long recursoId,
                                   Runnable accion) {
         try {
